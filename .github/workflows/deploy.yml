@@ -89,30 +89,37 @@ jobs:
             git config --global --add safe.directory "$APP_DIR" || true
 
             if [ ! -d ".git" ]; then
-              echo "Initializing Git repository in $APP_DIR..."
-              git init -b main
-              git remote add origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
-            else
-              git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
+              git init
             fi
+
+            git remote remove origin 2>/dev/null || true
+            git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
 
             echo "🔄 [2/5] Updating repository files..."
             git fetch origin main
             git checkout -B main origin/main
             git reset --hard origin/main
 
+            # Automatically sync .env if user created it in root directory
+            if [ -f "$APP_DIR/.env" ] && [ ! -f "$APP_DIR/shopify-app/.env" ]; then
+              echo "Syncing .env from root to shopify-app..."
+              cp "$APP_DIR/.env" "$APP_DIR/shopify-app/.env"
+            fi
+
             cd "$APP_DIR/shopify-app"
 
-            echo "📁 [3/5] Verifying secrets directory..."
+            echo "📁 [3/5] Verifying secrets & environment..."
             mkdir -p secrets
             if [ ! -f "secrets/google-adc.json" ]; then
               echo "⚠️ secrets/google-adc.json is missing. Creating placeholder..."
               echo "{}" > secrets/google-adc.json
             fi
 
-            if [ ! -f ".env" ] && [ -f ".env.example" ]; then
+            if [ -f ".env" ]; then
+              # Strip accidental leading spaces from each line
+              sed -i 's/^[ \t]*//' .env
+            elif [ -f ".env.example" ]; then
               cp .env.example .env
-              echo "⚠️ Initialized .env from .env.example. Please review configuration."
             fi
 
             echo "🔑 [4/5] Logging into GHCR and pulling prebuilt image (VPS does not build)..."
