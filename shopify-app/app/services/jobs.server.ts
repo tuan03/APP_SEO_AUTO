@@ -1,4 +1,5 @@
 import {
+  INTENT_RESEARCH_VERSION,
   buildIntentResearch,
   reviewIntentContent,
   recheckProposal,
@@ -290,6 +291,7 @@ export async function scanStep(job: ScanJob, store: Store) {
     });
     if (
       !cp.research ||
+      cp.research.version !== INTENT_RESEARCH_VERSION ||
       cp.research.knowledgeId !== knowledge.id ||
       cp.research.market !== market
     ) {

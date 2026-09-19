@@ -86,3 +86,19 @@ reinspection of every image are separate from this keyword-map upgrade.
   automatic correction attempt is allowed; remaining issues require review.
 - Local validation uses deterministic tests and isolated database fixtures. Live
   Shopify/GSC/model quality and a 50,000-product load test remain deployment checks.
+
+## Intent research v3: buyer scenarios
+New scans create 1–3 buying scenarios with a situation, desired outcome, decision
+questions, product-fit evidence and uncertainty. Each candidate keyword references
+the scenario(s) it serves. Review displays this chain before QA and approval.
+
+The application rejects missing scenario links, duplicate IDs and scenarios without
+product/image support. Product facts and GSC queries are not customer testimony.
+`CUSTOMER_SUPPORTED` requires a separately sourced CUSTOMER evidence record; the
+current collection pipeline does not ingest such records, so current buyer motivations
+remain `HYPOTHESIS`. This distinction is deliberate. Real customer-source ingestion
+and validation remain on the continuous-upgrade roadmap.
+
+Existing research stays readable. New scans invalidate pre-v3 research checkpoints;
+edits and QA enforce the new contracts on v3 records. No database migration is needed
+for this increment, since versioned research is persisted as JSON.

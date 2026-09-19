@@ -8,7 +8,17 @@ export const intentSchema = z.enum([
   "UNKNOWN",
 ]);
 const phrase = z.string().trim().min(1).max(200);
+export const buyerScenarioSchema = z.object({
+  id: z.string().min(1).max(80),
+  situation: z.string().min(1).max(1000),
+  desiredOutcome: z.string().min(1).max(1000),
+  decisionQuestions: z.array(z.string().min(1).max(500)).max(8),
+  evidenceIds: z.array(z.string()).min(1).max(30),
+  status: z.enum(["HYPOTHESIS", "CUSTOMER_SUPPORTED"]),
+  uncertainty: z.string().min(1).max(1500),
+});
 export const researchSchema = z.object({
+  buyerScenarios: z.array(buyerScenarioSchema).min(1).max(3).optional(),
   primary: phrase,
   secondary: z.array(phrase).max(8),
   cluster: phrase,
@@ -27,6 +37,7 @@ export const researchSchema = z.object({
         keyword: phrase,
         origin: z.enum(["AGENT_PROPOSED", "GSC", "EXISTING_TARGET"]),
         reason: z.string().min(1).max(2000),
+        scenarioIds: z.array(z.string()).min(1).max(3).optional(),
         evidenceIds: z.array(z.string()).min(1).max(30),
       }),
     )
@@ -42,10 +53,28 @@ export const researchSchema = z.object({
     .max(10),
   limitations: z.array(z.string().max(2000)).max(20),
 });
+export const intentResearchSchema = researchSchema.extend({
+  buyerScenarios: z.array(buyerScenarioSchema).min(1).max(3),
+  candidates: z
+    .array(
+      researchSchema.shape.candidates.element.extend({
+        scenarioIds: z.array(z.string()).min(1).max(3),
+      }),
+    )
+    .min(1)
+    .max(8),
+});
 export type Research = z.infer<typeof researchSchema>;
 export type Evidence = {
   id: string;
-  kind: "PRODUCT" | "IMAGE" | "GSC" | "WEB" | "EXISTING_TARGET" | "KNOWLEDGE";
+  kind:
+    | "PRODUCT"
+    | "IMAGE"
+    | "GSC"
+    | "WEB"
+    | "EXISTING_TARGET"
+    | "KNOWLEDGE"
+    | "CUSTOMER";
   text: string;
   url?: string;
   capturedAt?: string;
@@ -126,9 +155,42 @@ export function classifyOverlap(a: Target, b: Target) {
 export function validateResearch(
   value: unknown,
   evidence: Evidence[],
+  requireBuyerScenarios = false,
 ): Research {
   const result = researchSchema.parse(value);
   const byId = new Map(evidence.map((e) => [e.id, e]));
+  if (requireBuyerScenarios && !result.buyerScenarios?.length)
+    throw Error("Buyer scenarios are required for new research");
+  const scenarios = result.buyerScenarios || [];
+  const scenarioIds = new Set(scenarios.map((s) => s.id));
+  if (scenarioIds.size !== scenarios.length)
+    throw Error("Duplicate buyer scenario IDs");
+  for (const scenario of scenarios) {
+    for (const id of scenario.evidenceIds)
+      if (!byId.has(id)) throw Error(`Unknown scenario evidence: ${id}`);
+    if (
+      !scenario.evidenceIds.some((id) =>
+        ["PRODUCT", "IMAGE"].includes(byId.get(id)!.kind),
+      )
+    )
+      throw Error("Buyer scenario requires product-fit evidence");
+    if (
+      scenario.status === "CUSTOMER_SUPPORTED" &&
+      !scenario.evidenceIds.some((id) => byId.get(id)!.kind === "CUSTOMER")
+    )
+      throw Error(
+        "Customer-supported motivation requires actual customer evidence; GSC and product facts are insufficient",
+      );
+  }
+  for (const candidate of result.candidates) {
+    if (
+      (requireBuyerScenarios || scenarios.length) &&
+      !candidate.scenarioIds?.length
+    )
+      throw Error("Candidate must reference a buyer scenario");
+    for (const id of candidate.scenarioIds || [])
+      if (!scenarioIds.has(id)) throw Error(`Unknown buyer scenario: ${id}`);
+  }
   for (const item of [...result.candidates, ...result.questions])
     for (const id of item.evidenceIds)
       if (!byId.has(id)) throw Error(`Unknown evidence: ${id}`);

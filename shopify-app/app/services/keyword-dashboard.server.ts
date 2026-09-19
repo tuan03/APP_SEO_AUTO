@@ -8,6 +8,7 @@ import {
   validateResearch,
 } from "../core/keywords";
 import {
+  INTENT_RESEARCH_VERSION,
   researchFingerprint,
   type ResearchRecord,
 } from "./intent-research.server";
@@ -167,7 +168,14 @@ export async function saveIntentProposal(
     );
     let record = p.research as unknown as ResearchRecord | null;
     if (record && rawPlan) {
-      record = { ...record, plan: validateResearch(rawPlan, record.evidence) };
+      record = {
+        ...record,
+        plan: validateResearch(
+          rawPlan,
+          record.evidence,
+          record.version === INTENT_RESEARCH_VERSION,
+        ),
+      };
       // A human edit does not manufacture external demand evidence.
       const primary = record.plan.candidates.find(
         (c) =>

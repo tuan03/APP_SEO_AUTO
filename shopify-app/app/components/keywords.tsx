@@ -284,6 +284,30 @@ export function IntentEvidence({ proposal }: { proposal: ProposalView }) {
       <p>
         {record.plan.changeScope} · {record.plan.intent}
       </p>
+      <details open>
+        <summary>Buyer situations and decision questions</summary>
+        {record.plan.buyerScenarios?.length ? (
+          record.plan.buyerScenarios.map((s) => (
+            <article key={s.id}>
+              <h4>{s.situation}</h4>
+              <Badge value={s.status} />
+              <p>Desired outcome: {s.desiredOutcome}</p>
+              <ul>
+                {s.decisionQuestions.map((q) => (
+                  <li key={q}>{q}</li>
+                ))}
+              </ul>
+              <p className="muted">Uncertainty: {s.uncertainty}</p>
+              <small>
+                Product-fit evidence: {s.evidenceIds.join(", ")} · Scenario:{" "}
+                {s.id}
+              </small>
+            </article>
+          ))
+        ) : (
+          <p>Rescan this earlier version to add structured buyer scenarios.</p>
+        )}
+      </details>
       <h4>Independent content QA: {qa?.status || "NOT_RUN"}</h4>
       <p>{qa?.summary}</p>
       {qa?.issues?.map((i, n) => (
@@ -305,7 +329,8 @@ export function IntentEvidence({ proposal }: { proposal: ProposalView }) {
           <p key={c.keyword}>
             <strong>{c.keyword}</strong> ({c.origin}) — {c.reason}
             <br />
-            Evidence: {c.evidenceIds.join(", ")}
+            Evidence: {c.evidenceIds.join(", ")} · Buyer scenarios:{" "}
+            {c.scenarioIds?.join(", ") || "Not recorded"}
           </p>
         ))}
       </details>
