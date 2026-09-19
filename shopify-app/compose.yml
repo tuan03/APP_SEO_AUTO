@@ -17,16 +17,20 @@ services:
     restart: unless-stopped
     volumes: ["redis_data:/data"]
   migrate:
+    image: ${APP_IMAGE:-ghcr.io/tuan03/app_seo_auto:latest}
     build: .
     env_file: .env
     command: ["npx", "prisma", "migrate", "deploy"]
     depends_on:
       postgres: { condition: service_healthy }
   web:
+    image: ${APP_IMAGE:-ghcr.io/tuan03/app_seo_auto:latest}
     build: .
     restart: unless-stopped
     env_file: .env
     environment: { HOST: "0.0.0.0", PORT: "3000" }
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3005}:3000"
     secrets:
       - source: google-adc
         target: google-adc.json
@@ -44,6 +48,7 @@ services:
       interval: 30s
       retries: 3
   worker:
+    image: ${APP_IMAGE:-ghcr.io/tuan03/app_seo_auto:latest}
     build: .
     restart: unless-stopped
     env_file: .env
@@ -55,24 +60,9 @@ services:
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_started }
-  proxy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    environment:
-      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN}
-    ports: ["80:80", "443:443"]
-    volumes:
-      [
-        "./Caddyfile:/etc/caddy/Caddyfile:ro",
-        "caddy_data:/data",
-        "caddy_config:/config",
-      ]
-    depends_on: [web]
 volumes:
   postgres_data:
   redis_data:
-  caddy_data:
-  caddy_config:
 secrets:
   google-adc:
     file: ./secrets/google-adc.json

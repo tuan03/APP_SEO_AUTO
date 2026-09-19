@@ -1,0 +1,125 @@
+name: CI/CD Pipeline - Build on GitHub & Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # -------------------------------------------------------------
+  # Job 1: Build Docker Image on GitHub & Push to GHCR (No build on VPS)
+  # -------------------------------------------------------------
+  build-and-push:
+    name: Build & Push Docker Image to GHCR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute lowercase image name
+        id: img
+        run: |
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_NAME=ghcr.io/${REPO_LOWER}" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./shopify-app
+          file: ./shopify-app/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.img.outputs.IMAGE_NAME }}:latest
+            ${{ steps.img.outputs.IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # -------------------------------------------------------------
+  # Job 2: Deploy to Production VPS (Strictly using Secrets)
+  # -------------------------------------------------------------
+  deploy:
+    name: Deploy to Production VPS
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Compute lowercase image name
+        id: img
+        run: |
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_NAME=ghcr.io/${REPO_LOWER}" >> $GITHUB_OUTPUT
+
+      - name: SSH to VPS & Pull Prebuilt Image
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_NAME: ${{ steps.img.outputs.IMAGE_NAME }}:latest
+          ACTOR: ${{ github.actor }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.WRYDECO_VPS_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script_stop: true
+          envs: GITHUB_TOKEN,IMAGE_NAME,ACTOR
+          script: |
+            set -e
+            APP_DIR="/home/${USER:-azureuser}/APP_SEO_AUTO"
+
+            echo "🚀 [1/5] Checking repository directory on VPS..."
+            if [ ! -d "$APP_DIR" ]; then
+              echo "Repository not found. Cloning to $APP_DIR..."
+              git clone https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git "$APP_DIR"
+            fi
+
+            cd "$APP_DIR"
+
+            echo "🔄 [2/5] Updating repository files..."
+            git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
+            git fetch origin main
+            git checkout main
+            git reset --hard origin/main
+
+            cd "$APP_DIR/shopify-app"
+
+            echo "📁 [3/5] Verifying secrets directory..."
+            mkdir -p secrets
+            if [ ! -f "secrets/google-adc.json" ]; then
+              echo "⚠️ secrets/google-adc.json is missing. Creating placeholder..."
+              echo "{}" > secrets/google-adc.json
+            fi
+
+            if [ ! -f ".env" ] && [ -f ".env.example" ]; then
+              cp .env.example .env
+              echo "⚠️ Initialized .env from .env.example. Please review configuration."
+            fi
+
+            echo "🔑 [4/5] Logging into GHCR and pulling prebuilt image (VPS does not build)..."
+            echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+            export APP_IMAGE="$IMAGE_NAME"
+            docker compose pull
+
+            echo "🐳 [5/5] Recreating containers with new prebuilt image..."
+            docker compose up -d --remove-orphans
+
+            echo "🧹 Cleaning up dangling Docker images..."
+            docker image prune -f
+
+            echo "✅ Deployment successful! Service status:"
+            docker compose ps
