@@ -1,0 +1,264 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
+// enough when changing adapters.
+// See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Store {
+  id String @id @default(cuid())
+  domain String @unique
+  active Boolean @default(true)
+  website String?
+  timezone String @default("UTC")
+  settings Json @default("{}")
+  gscToken String?
+  gscProperty String?
+  lastAnalytics DateTime?
+  lastSync DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  resources Resource[]
+  knowledge Knowledge[]
+  jobs ScanJob[]
+  schedules Schedule[]
+  proposals Proposal[]
+  applications Application[]
+  usage Usage[]
+  audits Audit[]
+  analytics SearchMetric[]
+  sources Source[]
+}
+
+model Resource {
+  id String @id @default(cuid())
+  storeId String
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  gid String
+  kind String
+  title String
+  handle String
+  status String @default("ACTIVE")
+  vendor String @default("")
+  productType String @default("")
+  tags String[] @default([])
+  collectionIds String[] @default([])
+  snapshot Json
+  sourceHash String
+  scannedHash String?
+  lastAppliedHash String?
+  lastScannedAt DateTime?
+  deleted Boolean @default(false)
+  syncedAt DateTime @default(now())
+  proposals Proposal[]
+  items ScanItem[]
+  applications Application[]
+  @@unique([storeId, gid])
+  @@index([storeId, kind, deleted, id])
+}
+
+model Knowledge {
+  id String @id @default(cuid())
+  storeId String
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  status String @default("PENDING")
+  content Json
+  baseId String?
+  cacheName String?
+  cacheExpires DateTime?
+  approvedAt DateTime?
+  approvedBy String?
+  createdAt DateTime @default(now())
+  @@index([storeId, status, approvedAt])
+}
+
+model Source {
+  id String @id @default(cuid())
+  storeId String
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  url String
+  text String
+  fetchedAt DateTime @default(now())
+  @@unique([storeId, url])
+}
+
+model ScanJob {
+  id String @id @default(cuid())
+  storeId String
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  type String @default("SCAN")
+  status String @default("QUEUED")
+  filter Json @default("{}")
+  rule String @default("UNSCANNED")
+  ageDays Int @default(30)
+  materialized Boolean @default(false)
+  checkpoint Json @default("{}")
+  error String?
+  actor String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  items ScanItem[]
+  @@index([storeId, status, createdAt])
+}
+
+model ScanItem {
+  id String @id @default(cuid())
+  jobId String
+  job ScanJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  resourceId String
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  status String @default("QUEUED")
+  attempts Int @default(0)
+  checkpoint Json @default("{}")
+  error String?
+  updatedAt DateTime @updatedAt
+  @@unique([jobId, resourceId])
+  @@index([jobId, status])
+}
+
+model Schedule {
+  id String @id @default(cuid())
+  storeId String
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  name String
+  cron String?
+  timezone String
+  filter Json
+  rule String
+  ageDays Int @default(30)
+  active Boolean @default(true)
+  nextRun DateTime
+  lastJobId String?
+  createdAt DateTime @default(now())
+  @@index([active, nextRun])
+}
+
+model Proposal {
+  id String @id @default(cuid())
+  storeId String
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  resourceId String
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  sourceSnapshot Json
+  sourceHash String
+  knowledgeId String
+  promptVersion String
+  content Json
+  status String @default("PENDING")
+  revision Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([storeId, status, createdAt])
+}
+
+model Application {
+  id String @id @default(cuid())
+  storeId String
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  resourceId String
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  proposalId String?
+  restoreOf String?
+  status String @default("QUEUED")
+  before Json?
+  target Json
+  steps Json @default("{}")
+  expectedHash String
+  actor String
+  error String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([storeId, status])
+  @@index([resourceId, createdAt])
+}
+
+model Usage {
+  id String @id @default(cuid())
+  storeId String
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  operation String
+  model String
+  input Int
+  cached Int
+  output Int
+  thinking Int
+  searches Int @default(0)
+  estimatedUsd Float?
+  pricingVersion String
+  createdAt DateTime @default(now())
+  @@index([storeId, createdAt])
+}
+
+model Audit {
+  id String @id @default(cuid())
+  storeId String
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  actor String
+  event String
+  target String?
+  detail Json @default("{}")
+  createdAt DateTime @default(now())
+  @@index([storeId, createdAt])
+}
+
+model SearchMetric {
+  id String @id @default(cuid())
+  storeId String
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  date String
+  page String
+  clicks Float
+  impressions Float
+  ctr Float
+  position Float
+  @@unique([storeId, date, page])
+}
+
+model WebhookReceipt {
+  id String @id
+  createdAt DateTime @default(now())
+}
+
+model OAuthState {
+  id String @id
+  storeId String
+  expiresAt DateTime
+}
+
+model CatalogRow {
+  id String @id @default(cuid())
+  jobId String
+  gid String
+  parentId String?
+  value Json
+  @@unique([jobId, gid])
+  @@index([jobId, parentId, id])
+}
+
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}

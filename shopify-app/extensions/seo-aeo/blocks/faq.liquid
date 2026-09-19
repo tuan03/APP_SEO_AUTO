@@ -1,0 +1,36 @@
+{% liquid
+  assign resource = product | default: collection
+  assign faqs = resource.metafields.seo_aeo.faqs.value
+%}
+{% if faqs != blank %}
+  <section class="seo-aeo-faq" {{ block.shopify_attributes }}>
+    <h2>{{ block.settings.heading | escape }}</h2>
+    {% for faq in faqs %}
+      <details>
+        <summary>{{ faq.question | escape }}</summary>
+        <p>{{ faq.answer | escape | newline_to_br }}</p>
+      </details>
+    {% endfor %}
+  </section>
+  {% if block.settings.faq_schema %}
+    <script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[
+        {% for faq in faqs %}
+          {"@type":"Question","name":{{ faq.question | json | replace: '</', '<\/' }},"acceptedAnswer":{"@type":"Answer","text":{{ faq.answer | json | replace: '</', '<\/' }}}}{% unless forloop.last %},{% endunless %}
+        {% endfor %}
+      ]}
+    </script>
+  {% endif %}
+{% endif %}
+
+{% schema %}
+{
+  "name": "SEO/AEO FAQ",
+  "target": "section",
+  "stylesheet": "faq.css",
+  "settings": [
+    {"type":"text","id":"heading","label":"Heading","default":"Frequently asked questions"},
+    {"type":"checkbox","id":"faq_schema","label":"Include FAQ structured data","default":false,"info":"Only enable if no other app outputs FAQ schema for these questions. Rich results are not guaranteed."}
+  ]
+}
+{% endschema %}

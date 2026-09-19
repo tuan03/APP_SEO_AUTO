@@ -1,0 +1,4 @@
+.seo-aeo-faq { margin-block: 2rem; }
+.seo-aeo-faq details { border-bottom: 1px solid #ddd; padding: 1rem 0; }
+.seo-aeo-faq summary { cursor: pointer; font-weight: 600; }
+.seo-aeo-faq p { line-height: 1.6; }

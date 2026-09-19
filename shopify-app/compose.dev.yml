@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: seo
+      POSTGRES_PASSWORD: local-development-only
+      POSTGRES_DB: seo
+    ports: ["127.0.0.1:5433:5432"]
+    volumes: ["seo_dev_pg:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U seo"]
+      interval: 5s
+      retries: 10
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    ports: ["127.0.0.1:6380:6379"]
+    volumes: ["seo_dev_redis:/data"]
+volumes:
+  seo_dev_pg:
+  seo_dev_redis:

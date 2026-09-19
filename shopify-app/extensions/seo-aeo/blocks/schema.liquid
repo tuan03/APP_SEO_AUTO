@@ -1,0 +1,16 @@
+{% if block.settings.confirmed %}
+  {% if request.page_type == 'product' and product != blank %}
+    <script id="seo-aeo-schema" type="application/ld+json">{{ product | structured_data | replace: '</', '<\/' }}</script>
+  {% elsif request.page_type == 'collection' and collection != blank %}
+    <script id="seo-aeo-schema" type="application/ld+json">
+      {"@context":"https://schema.org","@type":"CollectionPage","name":{{ collection.title | json | replace: '</', '<\/' }},"description":{{ collection.description | strip_html | json | replace: '</', '<\/' }},"url":{{ canonical_url | json | replace: '</', '<\/' }}}
+    </script>
+  {% endif %}
+{% endif %}
+{% schema %}
+{
+  "name":"SEO/AEO Schema",
+  "target":"head",
+  "settings":[{"type":"checkbox","id":"confirmed","label":"I disabled other product/collection schema providers","default":false,"info":"Check your theme and SEO apps first. Product prices and availability use live Shopify data."}]
+}
+{% endschema %}

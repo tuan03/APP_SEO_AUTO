@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+
+# Local credentials, generated files, and preserved template history
+.env.*
+!.env.example
+.git-backups/
+secrets/
+*.pem
+*.key
+node_modules/

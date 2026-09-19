@@ -1,0 +1,14 @@
+.cache
+build
+node_modules
+.git
+.env
+.env.*
+secrets
+audit-*.json
+test-results
+tests
+
+lint-results.json
+backups
+.react-router
