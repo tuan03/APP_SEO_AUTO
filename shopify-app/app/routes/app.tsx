@@ -23,6 +23,7 @@ export default function App() {
           ["products", "Products"],
           ["collections", "Collections"],
           ["knowledge", "Store knowledge"],
+          ["keywords", "Keyword map"],
           ["jobs", "Scan jobs"],
           ["review", "Review"],
           ["history", "History & restore"],

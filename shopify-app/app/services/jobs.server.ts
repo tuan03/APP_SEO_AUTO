@@ -1,9 +1,28 @@
+import {
+  buildIntentResearch,
+  reviewIntentContent,
+  recheckProposal,
+  researchFingerprint,
+  type ResearchRecord,
+} from "./intent-research.server";
+import {
+  publishTarget,
+  seedResource,
+  lockMap,
+  keywordIndexStep,
+} from "./keywords.server";
 import type { Profile } from "../core/dashboard";
 import { checkpointJob } from "./job-state.server";
 import type { ScanJob, Store } from "@prisma/client";
 import { CronExpressionParser } from "cron-parser";
 import db from "../db.server";
-import { eligible, hash, sourceHash, contentHash } from "../core/content";
+import {
+  eligible,
+  hash,
+  sourceHash,
+  contentHash,
+  settingsSchema,
+} from "../core/content";
 import { filterWhere, syncCatalogStep } from "./catalog.server";
 import { readSnapshot, saveResource } from "./shopify-api.server";
 import { buildKnowledge } from "./knowledge.server";
@@ -24,7 +43,17 @@ export async function createJob(
   rule = "UNSCANNED",
   ageDays = 30,
 ) {
-  if (!["SCAN", "SYNC", "KNOWLEDGE", "SEARCH", "AUDIT"].includes(type))
+  if (
+    ![
+      "SCAN",
+      "SYNC",
+      "KNOWLEDGE",
+      "SEARCH",
+      "AUDIT",
+      "KEYWORDS",
+      "RECHECK",
+    ].includes(type)
+  )
     throw new Error("Unknown job type");
   return db.scanJob.create({
     data: { storeId, actor, type, filter: json(filter), rule, ageDays },
@@ -91,6 +120,38 @@ export async function scanStep(job: ScanJob, store: Store) {
       data: {
         error:
           "Waiting for catalog sync to complete before selecting scan items",
+      },
+    });
+    return;
+  }
+  const mapMarket = settingsSchema.parse(store.settings).targetMarket;
+  if (
+    !job.materialized &&
+    (await db.resource.count({
+      where: {
+        storeId: store.id,
+        deleted: false,
+        keywordTargets: {
+          none: { market: mapMarket, state: { in: ["BASELINE", "ACTIVE"] } },
+        },
+      },
+    }))
+  ) {
+    if (
+      !(await db.scanJob.count({
+        where: {
+          storeId: store.id,
+          type: "KEYWORDS",
+          status: { in: ["QUEUED", "RUNNING", "PAUSED"] },
+        },
+      }))
+    )
+      await createJob(store.id, "scan-prerequisite", "KEYWORDS");
+    await checkpointJob({
+      where: { id: job.id },
+      data: {
+        error:
+          "Waiting for store keyword baseline indexing. Resume a paused index job in Scan jobs if needed.",
       },
     });
     return;
@@ -162,6 +223,7 @@ export async function scanStep(job: ScanJob, store: Store) {
       collectionDone?: boolean;
       memberCursor?: string;
       collectionSummaries?: string[];
+      research?: ResearchRecord;
     };
     if (cp.sourceHash !== hash(snapshot)) {
       cp = { sourceHash: hash(snapshot), images: {} };
@@ -221,20 +283,62 @@ export async function scanStep(job: ScanJob, store: Store) {
       }
       cp.collectionDone = true;
     }
-    const content = await optimize(
+    const market = settingsSchema.parse(store.settings).targetMarket;
+    await db.$transaction(async (tx) => {
+      await lockMap(tx, store.id);
+      await seedResource(tx, store.id, item.resourceId, market);
+    });
+    if (
+      !cp.research ||
+      cp.research.knowledgeId !== knowledge.id ||
+      cp.research.market !== market
+    ) {
+      cp.research = await buildIntentResearch(
+        store.id,
+        item.resourceId,
+        snapshot,
+        knowledge.id,
+        market,
+        observations,
+      );
+      await db.scanItem.update({
+        where: { id: item.id },
+        data: { checkpoint: json(cp) },
+      });
+    }
+    let content = await optimize(
       store.id,
       snapshot,
       knowledge.id,
       store.settings,
       observations,
       (cp.collectionSummaries || []).join("\n"),
+      JSON.stringify(cp.research),
     );
+    let qa = await reviewIntentContent(
+      store.id,
+      snapshot,
+      content,
+      cp.research,
+    );
+    if (qa.status === "REVISE") {
+      content = await optimize(
+        store.id,
+        snapshot,
+        knowledge.id,
+        store.settings,
+        observations,
+        (cp.collectionSummaries || []).join("\n"),
+        JSON.stringify({ research: cp.research, fixTheseIssues: qa.issues }),
+      );
+      qa = await reviewIntentContent(store.id, snapshot, content, cp.research);
+    }
     await db.$transaction(async (tx) => {
       const still = await tx.scanJob.findUniqueOrThrow({
         where: { id: job.id },
       });
       if (still.status === "CANCELED") return;
-      await tx.proposal.create({
+      const proposal = await tx.proposal.create({
         data: {
           storeId: store.id,
           resourceId: item.resourceId,
@@ -243,7 +347,18 @@ export async function scanStep(job: ScanJob, store: Store) {
           knowledgeId: knowledge.id,
           promptVersion: PROMPT_VERSION,
           content: json(content),
+          research: json(cp.research),
+          qa: json(qa),
         },
+      });
+      await publishTarget(tx, {
+        storeId: store.id,
+        resourceId: item.resourceId,
+        proposalId: proposal.id,
+        market,
+        plan: cp.research!.plan,
+        fingerprint: researchFingerprint(content, cp.research),
+        evidenceLevel: cp.research!.evidenceLevel,
       });
       if (content.knowledgeSuggestions.length) {
         const profile = knowledge.content as unknown as Profile;
@@ -344,6 +459,41 @@ export async function storeTick(storeId: string) {
       });
     }
   }
+  // Prerequisite indexing and explicit QA reviews must not wait behind the scan
+  // which needs them. One checkpointed batch per worker tick.
+  const priority = await db.scanJob.findFirst({
+    where: {
+      storeId,
+      type: { in: ["KEYWORDS", "RECHECK"] },
+      status: { in: ["QUEUED", "RUNNING"] },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+  if (priority) {
+    try {
+      if (priority.type === "KEYWORDS")
+        await keywordIndexStep(
+          priority,
+          settingsSchema.parse(store.settings).targetMarket,
+        );
+      else {
+        await recheckProposal(
+          storeId,
+          (priority.filter as { proposalId: string }).proposalId,
+        );
+        await checkpointJob({
+          where: { id: priority.id },
+          data: { status: "COMPLETED" },
+        });
+      }
+    } catch (error) {
+      await checkpointJob({
+        where: { id: priority.id },
+        data: { status: "FAILED", error: String(error) },
+      });
+    }
+    return;
+  }
   let job = await db.scanJob.findFirst({
     where: {
       storeId,
@@ -380,11 +530,32 @@ export async function storeTick(storeId: string) {
         where: { id: job.id },
         data: { status: "COMPLETED" },
       });
+    } else if (job.type === "KEYWORDS") {
+      await keywordIndexStep(
+        job,
+        settingsSchema.parse(store.settings).targetMarket,
+      );
+    } else if (job.type === "RECHECK") {
+      await recheckProposal(
+        storeId,
+        (job.filter as { proposalId: string }).proposalId,
+      );
+      await checkpointJob({
+        where: { id: job.id },
+        data: { status: "COMPLETED" },
+      });
     } else if (job.type === "SEARCH") {
       const cp = job.checkpoint as { cursor?: string; day?: string };
       const day =
         cp.day ||
-        new Date(Date.now() - (store.lastAnalytics ? 7 : 90) * 86400000)
+        new Date(
+          Date.now() -
+            (store.lastAnalytics &&
+            (await db.queryMetric.count({ where: { storeId } }))
+              ? 7
+              : 90) *
+              86400000,
+        )
           .toISOString()
           .slice(0, 10);
       if (

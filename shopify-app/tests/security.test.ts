@@ -8,6 +8,41 @@ import {
 } from "../app/core/content";
 import { randomBytes } from "node:crypto";
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
+
+it("can retain an existing rich description without stripping its images and links", () => {
+  const html =
+    '<p>Size guide <a href="/pages/size-guide">Read guide</a></p><img src="https://cdn.shopify.com/guide.png" alt="Size guide">';
+  const snapshot: Snapshot = {
+    id: "one",
+    kind: "PRODUCT",
+    title: "Rug",
+    handle: "rug",
+    descriptionHtml: html,
+    seo: { title: null, description: null },
+    faqs: [],
+    images: [],
+    context: {},
+  };
+  const content = {
+    title: "Rug",
+    descriptionMode: "KEEP",
+    descriptionHtml: html,
+    seoTitle: "Rug",
+    seoDescription: "A printed rug",
+    faqs: [],
+    imageAlts: [],
+    facts: [],
+    warnings: [],
+    knowledgeSuggestions: [],
+  };
+  expect(validateContent(content, snapshot).descriptionHtml).toBe(html);
+  expect(() =>
+    validateContent(
+      { ...content, descriptionHtml: html + "<script>alert(1)</script>" },
+      snapshot,
+    ),
+  ).toThrow();
+});
 describe("crawler network boundaries", () => {
   it("discovers policy links in navigation and footer while excluding navigation text", () => {
     const page = extractPage(

@@ -1,3 +1,9 @@
+import {
+  keywordDashboard,
+  saveIntentProposal,
+  rejectIntentProposal,
+} from "./keyword-dashboard.server";
+import { decideOverlap } from "./keywords.server";
 import { performanceComparisons } from "./analytics.server";
 import type { DashboardData } from "../core/dashboard";
 import type { Prisma } from "@prisma/client";
@@ -16,12 +22,7 @@ import {
 } from "./search-console.server";
 import { schemaAudit } from "./schema-audit.server";
 import { readSnapshot } from "./shopify-api.server";
-import {
-  validateContent,
-  settingsSchema,
-  contentHash,
-  type Snapshot,
-} from "../core/content";
+import { settingsSchema, contentHash } from "../core/content";
 const filterSchema = z.object({
   kind: z.enum(["PRODUCT", "COLLECTION"]).optional(),
   q: z.string().max(200).optional(),
@@ -135,6 +136,8 @@ export async function loader({
         _count: { select: { proposals: true } },
       },
     });
+  } else if (page === "keywords") {
+    data.keywordMap = await keywordDashboard(store.id, url);
   } else if (page === "knowledge") {
     data.rows = await db.knowledge.findMany({
       where: { storeId: store.id },
@@ -281,33 +284,38 @@ export async function action({ request }: ActionFunctionArgs) {
         where: { id, storeId: store.id, status: "PENDING" },
         data: { status: "REJECTED" },
       });
-    else if (intent === "saveProposal") {
-      const p = await db.proposal.findFirstOrThrow({
-        where: {
-          id,
-          storeId: store.id,
-          status: { in: ["PENDING", "CONFLICT"] },
-        },
-      });
-      const content = validateContent(
-        JSON.parse(String(form.get("content"))),
-        p.sourceSnapshot as unknown as Snapshot,
-        store.settings,
+    else if (intent === "keywordIndex")
+      await createJob(store.id, actor, "KEYWORDS");
+    else if (intent === "keywordDecision")
+      await decideOverlap(
+        store.id,
+        actor,
+        id,
+        String(form.get("otherId")),
+        String(form.get("pairKey")),
+        String(form.get("decision")),
+        String(form.get("reason")),
       );
-      const changed = await db.proposal.updateMany({
+    else if (intent === "recheckProposal") {
+      await db.proposal.findFirstOrThrow({
         where: {
           id,
           storeId: store.id,
-          revision: Number(form.get("revision")),
           status: { in: ["PENDING", "CONFLICT"] },
         },
-        data: { content: json(content), revision: { increment: 1 } },
       });
-      if (!changed.count)
-        throw Error(
-          "This proposal changed in another session. Refresh before saving.",
-        );
-      await audit(store.id, actor, "PROPOSAL_EDITED", id);
+      await createJob(store.id, actor, "RECHECK", { proposalId: id });
+    } else if (intent === "saveProposal") {
+      await saveIntentProposal(
+        store.id,
+        id,
+        Number(form.get("revision")),
+        JSON.parse(String(form.get("content"))),
+        form.get("researchPlan")
+          ? JSON.parse(String(form.get("researchPlan")))
+          : null,
+        actor,
+      );
     } else if (intent === "approve" || intent === "forceApprove") {
       const p = await db.proposal.findFirstOrThrow({
         where: { id, storeId: store.id },
@@ -352,14 +360,7 @@ export async function action({ request }: ActionFunctionArgs) {
       }
       return { ok: true, message: results.join("\n") };
     } else if (intent === "reject")
-      await db.proposal.updateMany({
-        where: {
-          id,
-          storeId: store.id,
-          status: { in: ["PENDING", "CONFLICT"] },
-        },
-        data: { status: "REJECTED" },
-      });
+      await rejectIntentProposal(store.id, id, actor);
     else if (intent === "restore") await requestRestore(store.id, id, actor);
     else if (intent === "retryApply")
       await db.application.updateMany({

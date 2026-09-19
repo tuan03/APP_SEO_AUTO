@@ -12,6 +12,16 @@
 
 `npm run deploy` phát hành cấu hình Shopify và extension; lệnh này **không deploy web server hoặc worker**.
 
+## Keyword Map và nghiên cứu intent
+
+Bản nâng cấp thêm migration database; chạy `npm run setup` rồi khởi động lại web/worker.
+Trong **Settings**, đặt thị trường bằng mã quốc gia 3 chữ (`USA`, `GBR`...).
+Vào **Keyword map** để lập bản đồ catalog, xem chồng lặp, ghi quyết định xử lý và xuất CSV.
+Luồng scan mới tạo hồ sơ intent/keyword và QA độc lập trước khi bạn duyệt. Sửa nội dung
+hoặc chiến lược cần chạy lại QA; keyword chỉ thành ACTIVE sau khi áp dụng thành công.
+Các đề xuất cũ cần quét lại để có hồ sơ mới. Xem [KEYWORD_MAP.md](KEYWORD_MAP.md)
+để biết cách dùng, nguồn dữ liệu và giới hạn kiểm chứng.
+
 ## Google Cloud / Vertex AI
 
 Đã đặt mặc định project `gemini-image-benchmark`, region `global`, model `gemini-3.8-flash`.

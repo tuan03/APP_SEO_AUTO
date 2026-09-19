@@ -1,3 +1,4 @@
+import type { keywordDashboard } from "../services/keyword-dashboard.server";
 import type { performanceComparisons } from "../services/analytics.server";
 import type {
   Application,
@@ -97,6 +98,10 @@ export type DashboardData = Base &
         schedules: Wire<Schedule>[];
         items?: (Wire<ScanItem> & { resource: { title: string } })[];
         itemCounts: { status: string; _count: number }[];
+      }
+    | {
+        page: "keywords";
+        keywordMap: Wire<Awaited<ReturnType<typeof keywordDashboard>>>;
       }
     | { page: "history"; rows: ApplicationView[] }
     | {

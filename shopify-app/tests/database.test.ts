@@ -310,3 +310,24 @@ it("waits for full catalog sync before materializing all filtered results", asyn
   expect(saved.error).toContain("Waiting for catalog sync");
   expect(await db.scanItem.count({ where: { jobId: job.id } })).toBe(0);
 });
+
+it("builds the store keyword baseline before starting a newly materialized scan", async () => {
+  const { scanStep } = await import("../app/services/jobs.server");
+  const store = await db.store.update({
+    where: { id: a },
+    data: { lastSync: new Date() },
+  });
+  const job = await db.scanJob.create({
+    data: { storeId: a, actor: "test", type: "SCAN" },
+  });
+  await scanStep(job, store);
+  expect(
+    (await db.scanJob.findUniqueOrThrow({ where: { id: job.id } }))
+      .materialized,
+  ).toBe(false);
+  expect(
+    await db.scanJob.count({
+      where: { storeId: a, type: "KEYWORDS", status: "QUEUED" },
+    }),
+  ).toBe(1);
+});

@@ -36,6 +36,9 @@ model Store {
   audits Audit[]
   analytics SearchMetric[]
   sources Source[]
+  keywordTargets KeywordTarget[]
+  keywordDecisions KeywordDecision[]
+  queryMetrics QueryMetric[]
 }
 
 model Resource {
@@ -59,6 +62,7 @@ model Resource {
   deleted Boolean @default(false)
   syncedAt DateTime @default(now())
   proposals Proposal[]
+  keywordTargets KeywordTarget[]
   items ScanItem[]
   applications Application[]
   @@unique([storeId, gid])
@@ -152,6 +156,8 @@ model Proposal {
   knowledgeId String
   promptVersion String
   content Json
+  research Json?
+  qa Json?
   status String @default("PENDING")
   revision Int @default(1)
   createdAt DateTime @default(now())
@@ -261,4 +267,62 @@ model Session {
   emailVerified Boolean?  @default(false)
   refreshToken        String?
   refreshTokenExpires DateTime?
+}
+
+model KeywordTarget {
+  id String @id @default(cuid())
+  storeId String
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  resourceId String
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  proposalId String? @unique
+  state String @default("BASELINE")
+  market String
+  language String @default("en")
+  primary String
+  secondary String[] @default([])
+  keys String[]
+  cluster String
+  clusterKey String
+  intent String
+  buyerNeed String
+  rationale String
+  evidenceLevel String
+  contentFingerprint String?
+  appliedContentHash String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([storeId, state, market, language, clusterKey])
+  @@index([storeId, resourceId, state])
+  @@index([keys], type: Gin)
+}
+
+model KeywordDecision {
+  id String @id @default(cuid())
+  storeId String
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  pairKey String
+  leftId String
+  rightId String
+  decision String
+  reason String
+  actor String
+  createdAt DateTime @default(now())
+  @@unique([storeId, pairKey])
+}
+
+model QueryMetric {
+  id String @id @default(cuid())
+  storeId String
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  date String
+  page String
+  query String
+  country String
+  device String
+  clicks Float
+  impressions Float
+  position Float
+  @@unique([storeId, date, page, query, country, device])
+  @@index([storeId, page, country, date])
 }

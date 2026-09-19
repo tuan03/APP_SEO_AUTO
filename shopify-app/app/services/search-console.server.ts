@@ -139,4 +139,77 @@ export async function syncSearchDay(storeId: string, day: string) {
     more = rows.length === 25000;
     startRow += rows.length;
   }
+  await syncQueryDay(storeId, day, path);
+}
+
+// Keep query rows separate: privacy/row limits mean these are not page totals.
+export async function syncQueryDay(
+  storeId: string,
+  day: string,
+  path: string,
+  request: (
+    storeId: string,
+    path: string,
+    body: object,
+  ) => Promise<{
+    rows?: {
+      keys: string[];
+      clicks: number;
+      impressions: number;
+      position: number;
+    }[];
+  }> = gsc,
+) {
+  const rows: {
+    keys: string[];
+    clicks: number;
+    impressions: number;
+    position: number;
+  }[] = [];
+  let startRow = 0;
+  let more = true;
+  while (more) {
+    const result = await request(storeId, path, {
+      startDate: day,
+      endDate: day,
+      dimensions: ["page", "query", "country", "device"],
+      dataState: "final",
+      type: "web",
+      rowLimit: 25000,
+      startRow,
+    });
+    const page = result.rows || [];
+    if (
+      page.some(
+        (r) =>
+          r.keys.length !== 4 ||
+          ![r.clicks, r.impressions, r.position].every(Number.isFinite),
+      )
+    )
+      throw Error("Invalid GSC query response");
+    rows.push(...page);
+    more = page.length === 25000;
+    startRow += page.length;
+  }
+  await db.$transaction(
+    async (tx) => {
+      await tx.queryMetric.deleteMany({ where: { storeId, date: day } });
+      for (let i = 0; i < rows.length; i += 1000)
+        await tx.queryMetric.createMany({
+          data: rows.slice(i, i + 1000).map((r) => ({
+            storeId,
+            date: day,
+            page: r.keys[0],
+            query: r.keys[1],
+            country: r.keys[2].toLowerCase(),
+            device: r.keys[3].toUpperCase(),
+            clicks: r.clicks,
+            impressions: r.impressions,
+            position: r.position,
+          })),
+          skipDuplicates: true,
+        });
+    },
+    { timeout: 30000 },
+  );
 }

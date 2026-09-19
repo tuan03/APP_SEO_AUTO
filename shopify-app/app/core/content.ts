@@ -3,6 +3,7 @@ import sanitizeHtml from "sanitize-html";
 import { z } from "zod";
 
 export const defaults = {
+  targetMarket: "GLOBAL",
   titleMax: 120,
   seoTitleMax: 60,
   seoDescriptionMax: 160,
@@ -15,6 +16,10 @@ export const defaults = {
 };
 export const settingsSchema = z
   .object({
+    targetMarket: z
+      .string()
+      .regex(/^(GLOBAL|[A-Z]{3})$/)
+      .default("GLOBAL"),
     titleMax: z.number().int().min(20).max(255).default(120),
     seoTitleMax: z.number().int().min(20).max(70).default(60),
     seoDescriptionMax: z.number().int().min(50).max(320).default(160),
@@ -33,6 +38,7 @@ export const settingsSchema = z
 export const contentSchema = z.object({
   title: z.string().min(1).max(255),
   descriptionHtml: z.string().min(1).max(200000),
+  descriptionMode: z.enum(["KEEP", "REWRITE"]).optional(),
   seoTitle: z.string().min(1).max(70),
   seoDescription: z.string().min(1).max(320),
   faqs: z
@@ -151,6 +157,11 @@ export function validateContent(
     if ([...content[key]].length > limit)
       throw new Error(`${key} exceeds ${limit} characters`);
   }
+  const keeping = content.descriptionMode === "KEEP";
+  if (keeping && content.descriptionHtml !== snapshot.descriptionHtml)
+    throw Error(
+      "KEEP description must exactly match the source; use REWRITE to change content",
+    );
   const cleaned = sanitizeHtml(content.descriptionHtml, {
     allowedTags: [
       "p",
@@ -171,7 +182,7 @@ export function validateContent(
     ],
     allowedAttributes: {},
   });
-  if (cleaned !== content.descriptionHtml)
+  if (!keeping && cleaned !== content.descriptionHtml)
     throw new Error(
       "Description contains unsupported or unsafe HTML. Remove scripts, links, styles and attributes.",
     );
@@ -188,9 +199,12 @@ export function validateContent(
     .replace(/<[^>]*>/g, " ")
     .trim()
     .split(/\s+/).length;
-  if (words > limits.wordsMax)
+  if (!keeping && words > limits.wordsMax)
     throw new Error("Description exceeds word limit");
-  if (words < limits.wordsMin || content.faqs.length < limits.faqMin)
+  if (
+    (!keeping && words < limits.wordsMin) ||
+    content.faqs.length < limits.faqMin
+  )
     content.warnings = [
       ...new Set([
         ...content.warnings,

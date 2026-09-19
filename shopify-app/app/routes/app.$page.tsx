@@ -1,3 +1,4 @@
+import { KeywordMap } from "../components/keywords";
 import {
   Form,
   Link,
@@ -22,6 +23,7 @@ export default function Dashboard() {
     products: "Products",
     collections: "Collections",
     knowledge: "Store knowledge",
+    keywords: "Keyword map",
     jobs: "Scan jobs",
     review: "Review",
     history: "History & restore",
@@ -536,6 +538,7 @@ export default function Dashboard() {
           {!data.rows.length && <Empty>No changes have been applied.</Empty>}
         </section>
       )}
+      {data.page === "keywords" && <KeywordMap data={data} />}
       {data.page === "settings" && <Settings data={data} />}
       {data.page === "performance" && <Performance data={data} />}
       {["review", "history"].includes(data.page) && (

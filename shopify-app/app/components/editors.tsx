@@ -1,3 +1,4 @@
+import { IntentEvidence } from "./keywords";
 import type { ProposalView, KnowledgeView, Profile } from "../core/dashboard";
 import { useState } from "react";
 import { Form } from "react-router";
@@ -23,6 +24,10 @@ export function ProposalEditor({
         Knowledge {proposal.knowledgeId} · Prompt {proposal.promptVersion} ·
         Revision {proposal.revision}
       </p>
+      <IntentEvidence
+        proposal={proposal}
+        key={`${proposal.id}-${proposal.revision}`}
+      />
       <div className="compare">
         <div>
           <h3>Currently on Shopify</h3>
@@ -55,6 +60,26 @@ export function ProposalEditor({
             value={content.seoDescription}
             onChange={(v) => set({ ...content, seoDescription: v })}
           />
+          <label>
+            Description action
+            <select
+              value={content.descriptionMode || "REWRITE"}
+              onChange={(e) =>
+                set({
+                  ...content,
+                  descriptionMode: e.target.value as "KEEP" | "REWRITE",
+                  ...(e.target.value === "KEEP"
+                    ? { descriptionHtml: current.descriptionHtml }
+                    : {}),
+                })
+              }
+            >
+              <option value="KEEP">
+                Keep original description, images and links
+              </option>
+              <option value="REWRITE">Rewrite with supported HTML</option>
+            </select>
+          </label>
           <Field
             label="Description HTML"
             value={content.descriptionHtml}

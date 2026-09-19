@@ -1,3 +1,10 @@
+import { approveTarget, activateTarget } from "./keywords.server";
+import {
+  researchFingerprint,
+  type ResearchRecord,
+} from "./intent-research.server";
+import { qaGate } from "../core/keywords";
+import { settingsSchema, hash } from "../core/content";
 import db from "../db.server";
 import { applySafely, type ApplyRecord } from "../core/apply";
 import {
@@ -42,7 +49,31 @@ export async function approveProposal(
     );
   }
   const content = validateContent(p.content, current, p.store.settings);
+  if (p.research) {
+    const problem = qaGate(p.qa, researchFingerprint(p.content, p.research));
+    if (problem) throw Error(problem);
+    const record = p.research as unknown as ResearchRecord;
+    if (record.market !== settingsSchema.parse(p.store.settings).targetMarket)
+      throw Error("Target country changed; rescan before approving");
+    if (hash(current) !== record.sourceFingerprint)
+      throw Error(
+        "Source facts changed after intent research; rescan this version before approval",
+      );
+  }
   await db.$transaction(async (tx) => {
+    await approveTarget(tx, storeId, id);
+    if (
+      await tx.application.count({
+        where: {
+          storeId,
+          proposalId: id,
+          status: { in: ["QUEUED", "RUNNING", "PARTIAL", "FAILED"] },
+        },
+      })
+    )
+      throw Error(
+        "An existing application must finish before this proposal can be approved again",
+      );
     const updated = await tx.proposal.updateMany({
       where: {
         id,
@@ -126,6 +157,30 @@ export async function executeApplication(id: string) {
     data: { status: "RUNNING", error: null },
   });
   try {
+    if (app.proposalId) {
+      const proposal = await db.proposal.findFirstOrThrow({
+        where: { id: app.proposalId, storeId: app.storeId },
+      });
+      if (proposal.research) {
+        const expected = withContent(
+          proposal.sourceSnapshot as unknown as Snapshot,
+          validateContent(
+            proposal.content,
+            proposal.sourceSnapshot as unknown as Snapshot,
+            app.store.settings,
+          ),
+        );
+        if (contentHash(expected) !== contentHash(record.target))
+          throw Error(
+            "CONFLICT: proposal differs from this application's saved target",
+          );
+        const problem = qaGate(
+          proposal.qa,
+          researchFingerprint(proposal.content, proposal.research),
+        );
+        if (problem) throw Error(problem);
+      }
+    }
     await applySafely(record, {
       read: () => readSnapshot(app.store.domain, app.resource.gid),
       checkpoint: async (r) => {
@@ -148,12 +203,24 @@ export async function executeApplication(id: string) {
       where: { id: resource.id },
       data: { lastAppliedHash: resource.sourceHash },
     });
-    await db.application.update({ where: { id }, data: { status: "APPLIED" } });
-    if (app.proposalId)
-      await db.proposal.updateMany({
-        where: { id: app.proposalId, storeId: app.storeId },
+    await db.$transaction(async (tx) => {
+      await activateTarget(
+        tx,
+        app.storeId,
+        resource.id,
+        app.proposalId,
+        resource.snapshot as unknown as Snapshot,
+      );
+      await tx.application.update({
+        where: { id },
         data: { status: "APPLIED" },
       });
+      if (app.proposalId)
+        await tx.proposal.updateMany({
+          where: { id: app.proposalId, storeId: app.storeId },
+          data: { status: "APPLIED" },
+        });
+    });
     await audit(
       app.storeId,
       app.actor,

@@ -6,6 +6,7 @@ import { Form } from "react-router";
 import { Button, Field, Empty } from "./forms";
 export function Settings({ data }: { data: PageData<"settings"> }) {
   const [settings, set] = useState<typeof defaults>({
+    targetMarket: "GLOBAL",
     titleMax: 120,
     seoTitleMax: 60,
     seoDescriptionMax: 160,
@@ -32,6 +33,16 @@ export function Settings({ data }: { data: PageData<"settings"> }) {
             name="content"
             value={JSON.stringify(settings)}
           />
+          <Field
+            label="Target country (ISO 3-letter, e.g. USA, GBR; GLOBAL if unspecified)"
+            value={settings.targetMarket}
+            onChange={(v) =>
+              set({ ...settings, targetMarket: v.toUpperCase() })
+            }
+          />
+          <p>
+            Changing country requires new research. Output language is English.
+          </p>
           <div className="grid">
             {(
               [
