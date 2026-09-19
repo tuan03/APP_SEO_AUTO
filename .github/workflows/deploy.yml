@@ -72,9 +72,10 @@ jobs:
           IMAGE_NAME: ${{ steps.img.outputs.IMAGE_NAME }}:latest
           ACTOR: ${{ github.actor }}
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.WRYDECO_VPS_KEY }}
+          host: ${{ secrets.VPS_HOST || '20.222.21.81' }}
+          username: ${{ secrets.VPS_USER || 'azureuser' }}
+          key: ${{ secrets.WRYDECO_VPS_KEY || secrets.SSH_PRIVATE_KEY || secrets.SSH_KEY || secrets.WRYDECO_VPS }}
+          passphrase: ${{ secrets.VPS_PASSPHRASE || secrets.SSH_PASSPHRASE || '' }}
           port: ${{ secrets.VPS_PORT || 22 }}
           script_stop: true
           envs: GITHUB_TOKEN,IMAGE_NAME,ACTOR
