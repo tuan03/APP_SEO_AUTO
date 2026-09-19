@@ -84,17 +84,21 @@ jobs:
             APP_DIR="/home/${USER:-azureuser}/APP_SEO_AUTO"
 
             echo "🚀 [1/5] Checking repository directory on VPS..."
-            if [ ! -d "$APP_DIR" ]; then
-              echo "Repository not found. Cloning to $APP_DIR..."
-              git clone https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git "$APP_DIR"
+            mkdir -p "$APP_DIR"
+            cd "$APP_DIR"
+            git config --global --add safe.directory "$APP_DIR" || true
+
+            if [ ! -d ".git" ]; then
+              echo "Initializing Git repository in $APP_DIR..."
+              git init -b main
+              git remote add origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
+            else
+              git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
             fi
 
-            cd "$APP_DIR"
-
             echo "🔄 [2/5] Updating repository files..."
-            git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
             git fetch origin main
-            git checkout main
+            git checkout -B main origin/main
             git reset --hard origin/main
 
             cd "$APP_DIR/shopify-app"
